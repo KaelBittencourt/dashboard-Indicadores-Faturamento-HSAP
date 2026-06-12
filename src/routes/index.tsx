@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { fetchSheetData, type RawRecord, type MetaRecord } from "@/lib/sheet-data";
+import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer,
   LineChart,
@@ -112,19 +113,7 @@ function statusDot(s: ReturnType<typeof statusForPct>) {
   return s === "ok" ? "🟢" : s === "near" ? "🟢" : s === "warn" ? "🟡" : "🔴";
 }
 
-const METAS_STORAGE_KEY = "dash-metas";
-
-function loadLocalMetas(): MetaRecord[] {
-  try {
-    const raw = localStorage.getItem(METAS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
-  return [];
-}
-
-function saveLocalMetas(metas: MetaRecord[]) {
-  localStorage.setItem(METAS_STORAGE_KEY, JSON.stringify(metas));
-}
+// Metas are now managed via Supabase
 
 function DashboardPage() {
   const [theme, setTheme] = useState<"light" | "dark">(() => {
@@ -151,14 +140,31 @@ function DashboardPage() {
   const data = query.data;
   const records = data?.records ?? [];
 
-  // Metas managed locally via localStorage
-  const [metas, setMetas] = useState<MetaRecord[]>(loadLocalMetas);
+  // Metas managed via Supabase
+  const [metas, setMetas] = useState<MetaRecord[]>([]);
   const [metasModalOpen, setMetasModalOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
 
-  const updateMetas = useCallback((newMetas: MetaRecord[]) => {
+  useEffect(() => {
+    supabase.from("metas").select("setor, meta").then(({ data, error }) => {
+      if (error) {
+        console.error("Erro ao buscar metas:", error);
+        alert("Erro ao buscar metas: " + error.message);
+      }
+      else if (data) setMetas(data as MetaRecord[]);
+    });
+  }, []);
+
+  const updateMetas = useCallback(async (newMetas: MetaRecord[]) => {
     setMetas(newMetas);
-    saveLocalMetas(newMetas);
+    const { error } = await supabase.from("metas").upsert(
+      newMetas.map(m => ({ setor: m.setor, meta: m.meta })),
+      { onConflict: "setor" }
+    );
+    if (error) {
+      console.error("Erro ao atualizar metas:", error);
+      alert("Erro ao salvar no banco: " + error.message);
+    }
   }, []);
 
   // Filter state
