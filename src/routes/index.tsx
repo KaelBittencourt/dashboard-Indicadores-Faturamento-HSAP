@@ -1157,7 +1157,7 @@ function MetasEditorModal({
   }
 
   function handleDelete(setor: string) {
-    setRows((prev) => prev.filter((r) => r.setor !== setor));
+    setRows((prev) => prev.map((r) => (r.setor === setor ? { ...r, meta: 0 } : r)));
   }
 
   function handleSave() {
@@ -1238,7 +1238,7 @@ function MetasEditorModal({
                         <button
                           onClick={() => handleDelete(r.setor)}
                           className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                          title="Remover meta"
+                          title="Limpar valor"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
