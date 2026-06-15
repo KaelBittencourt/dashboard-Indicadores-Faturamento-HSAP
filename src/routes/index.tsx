@@ -155,15 +155,31 @@ function DashboardPage() {
     });
   }, []);
 
-  const updateMetas = useCallback(async (newMetas: MetaRecord[]) => {
+  const updateMetas = useCallback(async (newMetas: MetaRecord[], deletedSetores?: string[]) => {
     setMetas(newMetas);
-    const { error } = await supabase.from("metas").upsert(
-      newMetas.map(m => ({ setor: m.setor, meta: m.meta })),
-      { onConflict: "setor" }
-    );
-    if (error) {
-      console.error("Erro ao atualizar metas:", error);
-      alert("Erro ao salvar no banco: " + error.message);
+
+    // Delete removed metas from Supabase
+    if (deletedSetores && deletedSetores.length > 0) {
+      const { error: delError } = await supabase
+        .from("metas")
+        .delete()
+        .in("setor", deletedSetores);
+      if (delError) {
+        console.error("Erro ao excluir metas:", delError);
+        alert("Erro ao excluir metas do banco: " + delError.message);
+      }
+    }
+
+    // Upsert remaining metas
+    if (newMetas.length > 0) {
+      const { error } = await supabase.from("metas").upsert(
+        newMetas.map(m => ({ setor: m.setor, meta: m.meta })),
+        { onConflict: "setor" }
+      );
+      if (error) {
+        console.error("Erro ao atualizar metas:", error);
+        alert("Erro ao salvar no banco: " + error.message);
+      }
     }
   }, []);
 
@@ -1130,7 +1146,7 @@ function MetasEditorModal({
 }: {
   metas: MetaRecord[];
   allSetores: string[];
-  onSave: (metas: MetaRecord[]) => void;
+  onSave: (metas: MetaRecord[], deletedSetores: string[]) => void;
   onClose: () => void;
 }) {
   const [rows, setRows] = useState<{ setor: string; meta: number; isNew?: boolean }[]>(() => {
@@ -1149,6 +1165,7 @@ function MetasEditorModal({
     return initialRows.sort((a, b) => a.setor.localeCompare(b.setor));
   });
   const [saved, setSaved] = useState(false);
+  const [deletedSetores, setDeletedSetores] = useState<string[]>([]);
   const backdropRef = useRef<HTMLDivElement>(null);
 
   function handleMetaChange(setor: string, value: string) {
@@ -1157,23 +1174,30 @@ function MetasEditorModal({
   }
 
   function handleDelete(setor: string) {
-    setRows((prev) => prev.map((r) => (r.setor === setor ? { ...r, meta: 0 } : r)));
+    const confirmed = window.confirm(`Tem certeza que deseja excluir a meta do setor "${setor}"?\n\nEsta ação será aplicada ao salvar.`);
+    if (!confirmed) return;
+    setRows((prev) => prev.filter((r) => r.setor !== setor));
+    // Track deleted setores that existed in the database
+    if (currentMetas.some((m) => m.setor === setor)) {
+      setDeletedSetores((prev) => [...prev, setor]);
+    }
   }
 
   function handleSave() {
-    onSave(rows.map(({ setor, meta }) => ({ setor, meta })));
+    onSave(rows.map(({ setor, meta }) => ({ setor, meta })), deletedSetores);
     setSaved(true);
     setTimeout(() => onClose(), 600);
   }
 
   const hasChanges = useMemo(() => {
+    if (deletedSetores.length > 0) return true;
     const currentMap = new Map(currentMetas.map((m) => [m.setor, m.meta]));
     if (rows.length !== currentMetas.length) return true;
     for (const r of rows) {
       if (currentMap.get(r.setor) !== r.meta) return true;
     }
     return false;
-  }, [rows, currentMetas]);
+  }, [rows, currentMetas, deletedSetores]);
 
   return (
     <div
@@ -1238,7 +1262,7 @@ function MetasEditorModal({
                         <button
                           onClick={() => handleDelete(r.setor)}
                           className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                          title="Limpar valor"
+                          title="Excluir meta"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
